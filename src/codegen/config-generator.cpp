@@ -14,7 +14,7 @@ void ConfigGenerator::FillHeader(FileWriter& wr, const GenDescriptor_t& gsett)
   wr.Append("");
   wr.Append("  Note(!): bit-feild was not tested properly. */");
   wr.Append("");
-  wr.Append("/* #define %s */", gsett.usebits_def.c_str());
+  wr.Append("#define %s ", gsett.usebits_def.c_str());
   wr.Append(2);
 
   wr.Append("/* ------------------------------------------------------------------------- *");
@@ -31,6 +31,13 @@ void ConfigGenerator::FillHeader(FileWriter& wr, const GenDescriptor_t& gsett)
   wr.Append("  This struct definition have to be placed (or be included) in dbccodeconf.h */");
   wr.Append("");
   wr.Append("/* #define %s */", gsett.usesruct_def.c_str());
+  wr.Append(2);
+  
+  wr.Append("/* ------------------------------------------------------------------------- *");
+  wr.Append(" initializes buffer bytes at beginning of pack function");
+  wr.Append("*/");
+  wr.Append("");
+  wr.Append("#define INIT_DATA_BYTES");
   wr.Append(2);
 
   wr.Append("/* ------------------------------------------------------------------------- *");

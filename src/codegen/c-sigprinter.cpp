@@ -1,3 +1,4 @@
+#include <cstring>
 #include <stdlib.h>
 #include <memory>
 #include "c-sigprinter.h"
@@ -9,7 +10,7 @@ static const size_t WBUFF_LEN = 2048;
 static char workbuff[WBUFF_LEN] = { 0 };
 
 // additional templates for expression generation
-static std::string msk[] = { "0", "0x01U", "0x03U", "0x07U", "0x0FU", "0x1FU", "0x3FU", "0x7FU", "0xFFU" };
+static std::string msk[] = { "0x00000000", "0x00000001U", "0x00000003U", "0x00000007U", "0x0000000FU", "0x0000001FU", "0x0000003FU", "0x0000007FU", "0x000000FFU" };
 
 static inline int32_t ShiftByte(const SignalDescriptor_t* sig, int32_t bn)
 {
@@ -62,11 +63,16 @@ std::string CSigPrinter::PrintPhysicalToRaw(const SignalDescriptor_t* sig, const
 
   if (sig->IsDoubleSig)
   {
-    retstr += StrPrint("#define %s_%s_CovFactor (%s)\n", drvname.c_str(), sig->Name.c_str(), prtFactor.c_str());
+    const std::string prtFactor = prt_double(sig->Factor*100, 9);
+    const std::string prtOffset = prt_double(sig->Offset*100, 9);
+
+    retstr += StrPrint("#define %s_%s_CovFactor ((%s)/100U)\n", drvname.c_str(), sig->Name.c_str(), prtFactor.c_str());
   }
   else
   {
-    retstr += StrPrint("#define %s_%s_CovFactor (%d)\n", drvname.c_str(), sig->Name.c_str(), (int32_t)sig->Factor);
+    const std::string prtFactor = prt_double(sig->Factor*10, 9);
+    const std::string prtOffset = prt_double(sig->Offset*10, 9);
+    retstr += StrPrint("#define %s_%s_CovFactor ((%d)/10U)\n", drvname.c_str(), sig->Name.c_str(), (int32_t)sig->Factor);
   }
 
   retstr += StrPrint("#define %s_%s_toS(x) ( (%s) ", drvname.c_str(), sig->Name.c_str(),
@@ -74,24 +80,24 @@ std::string CSigPrinter::PrintPhysicalToRaw(const SignalDescriptor_t* sig, const
 
   if (sig->IsDoubleSig)
   {
-    retstr += StrPrint("(((x) - (%s)) / (%s)) )\n", prtOffset.c_str(), prtFactor.c_str());
+    retstr += StrPrint("(((x*100) - (%s)) / (%s)) )\n", prtOffset.c_str(), prtFactor.c_str());
   }
   else
   {
     if (sig->Offset == 0)
     {
       // only factor
-      retstr += StrPrint("((x) / (%d)) )\n", (int32_t)sig->Factor);
+      retstr += StrPrint("((x*10) / (%d)) )\n", (int32_t)sig->Factor);
     }
     else if (sig->Factor == 1)
     {
       // only offset
-      retstr += StrPrint("((x) - (%d)) )\n", (int32_t)sig->Offset);
+      retstr += StrPrint("(((x*10) - (%d))/10) )\n", (int32_t)sig->Offset);
     }
     else
     {
       // full expression
-      retstr += StrPrint("(((x) - (%d)) / (%d)) )\n", (int32_t)sig->Offset, (int32_t)sig->Factor);
+      retstr += StrPrint("(((x*10) - (%d)) / (%d)) )\n", (int32_t)sig->Offset, (int32_t)sig->Factor);
     }
   }
 
@@ -99,24 +105,24 @@ std::string CSigPrinter::PrintPhysicalToRaw(const SignalDescriptor_t* sig, const
 
   if (sig->IsDoubleSig)
   {
-    retstr += StrPrint("(((x) * (%s)) + (%s)) )\n", prtFactor.c_str(), prtOffset.c_str());
+    retstr += StrPrint("(((((x) * (%s)) + (%s))/100) )\n", prtFactor.c_str(), prtOffset.c_str());
   }
   else
   {
     if (sig->Offset == 0)
     {
       // only factor
-      retstr += StrPrint("((x) * (%d)) )\n", (int32_t)sig->Factor);
+      retstr += StrPrint("(((x) * (%d))/10) )\n", (int32_t)sig->Factor);
     }
     else if (sig->Factor == 1)
     {
       // only offset
-      retstr += StrPrint("((x) + (%d)) )\n", (int32_t)sig->Offset);
+      retstr += StrPrint("(((x*10) + (%d))/10) )\n", (int32_t)sig->Offset);
     }
     else
     {
       // full expression
-      retstr += StrPrint("(((x) * (%d)) + (%d)) )\n", (int32_t)sig->Factor, (int32_t)sig->Offset);
+      retstr += StrPrint("((((x) * (%d)) + (%d))/10) )\n", (int32_t)sig->Factor, (int32_t)sig->Offset);
     }
   }
 
@@ -139,11 +145,11 @@ int32_t CSigPrinter::BuildCConvertExprs(CiExpr_t* msgprinter)
   for (size_t i = 0; i < msgprinter->msg.Signals.size(); i++)
   {
     // there are two main goal of this code:
-    // 1 - to generate bytes to signal C-expression, (_d - name of array).
+    // 1 - to generate bytes to signal C-expression, (can_msg_bytes - name of array).
     // For each signal one or more bytes can be referenced. It's generated
     // once on each function call for each signal
     //
-    // 2 - to generate signals to each byte expression, (_m - name of struct with
+    // 2 - to generate signals to each byte expression, (data_struct - name of struct with
     // signals). For each byte a 8 signals can be referenced. It's generated
     // consequently signal after signal (by adding chunks of expressions to @to_bytes
     // collection)
@@ -212,19 +218,19 @@ std::string CSigPrinter::PrintSignalExpr(const SignalDescriptor_t* sig, std::vec
 
   if (bbc > slen)
   {
-    snprintf(workbuff, WBUFF_LEN, "((_d[%d] >> %dU) & (%s))", bn, bbc - slen, msk[slen].c_str());
+    snprintf(workbuff, WBUFF_LEN, "((((u32)(can_msg_bytes[%d])) >> %dU) & ((u32)%s))", bn, bbc - slen, msk[slen].c_str());
     tosigexpr += workbuff;
 
-    snprintf(workbuff, WBUFF_LEN, "((_m->%s & (%s)) << %dU)", sig->Name.c_str(), msk[slen].c_str(), bbc - slen);
+    snprintf(workbuff, WBUFF_LEN, "((((u32)(data_struct->%s)) & ((u32)%s)) << %dU)", sig->Name.c_str(), msk[slen].c_str(), bbc - slen);
     AppendToByteLine(to_bytes[bn], workbuff);
   }
   else if (bbc == slen)
   {
     // no rolling bits
-    snprintf(workbuff, WBUFF_LEN, "(_d[%d] & (%s))", bn, msk[slen].c_str());
+    snprintf(workbuff, WBUFF_LEN, "(((u32)(can_msg_bytes[%d])) & ((u32)%s))", bn, msk[slen].c_str());
     tosigexpr += workbuff;
 
-    snprintf(workbuff, WBUFF_LEN, "(_m->%s & (%s))", sig->Name.c_str(), msk[slen].c_str());
+    snprintf(workbuff, WBUFF_LEN, "(((u32)(data_struct->%s)) & ((u32)%s))", sig->Name.c_str(), msk[slen].c_str());
     AppendToByteLine(to_bytes[bn], workbuff);
   }
   else
@@ -234,19 +240,28 @@ std::string CSigPrinter::PrintSignalExpr(const SignalDescriptor_t* sig, std::vec
 
     if (slen > 31)
     {
-      t64 = "(uint64_t)";
+      t64 = "(u64)";
+    }
+    else
+    {
+      t64 = "(u32)";
     }
 
-    snprintf(workbuff, WBUFF_LEN, "(%s(_d[%d] & (%s)) << %dU)", t64.c_str(), bn, msk[bbc].c_str(), slen);
+    snprintf(workbuff, WBUFF_LEN, "(((%s(can_msg_bytes[%d])) & (%s%s)) << %dU)",t64.c_str(), bn,t64.c_str(), msk[bbc].c_str(), slen);
     tosigexpr += workbuff;
 
-    snprintf(workbuff, WBUFF_LEN, "((_m->%s >> %dU) & (%s))", sig->Name.c_str(), slen, msk[bbc].c_str());
+    snprintf(workbuff, WBUFF_LEN, "(((%s(data_struct->%s)) >> %dU) & (%s%s))",t64.c_str(), sig->Name.c_str(), slen,t64.c_str(), msk[bbc].c_str());
     AppendToByteLine(to_bytes[bn], workbuff);
+    
+    t64.clear();
 
     while ((slen - 8) >= 0)
     {
-      t64.clear();
 
+      if(strcmp(t64.c_str(),"")==0)
+      {
+          t64 = "(u32)";
+      }
       slen -= 8;
 
       bn = ShiftByte(sig, bn);
@@ -259,41 +274,49 @@ std::string CSigPrinter::PrintSignalExpr(const SignalDescriptor_t* sig, std::vec
         return to_bytes[0];
       }
 
-      tosigexpr += " | ";
+      tosigexpr += " \n\t\t\t| ";
 
       if (slen == 0)
       {
         // last byte is aligned
-        snprintf(workbuff, WBUFF_LEN, "(_d[%d] & (%s))", bn, msk[8].c_str());
+        snprintf(workbuff, WBUFF_LEN, "((%s(can_msg_bytes[%d])) & (%s%s))", t64.c_str(),bn,t64.c_str(),msk[8].c_str());
         tosigexpr += workbuff;
 
-        snprintf(workbuff, WBUFF_LEN, "(_m->%s & (%s))", sig->Name.c_str(), msk[8].c_str());
+        snprintf(workbuff, WBUFF_LEN, "((%s(data_struct->%s)) & (%s%s))", t64.c_str(),sig->Name.c_str(),t64.c_str(), msk[8].c_str());
         AppendToByteLine(to_bytes[bn], workbuff);
 
       }
       else
       {
-        if (slen > 31)
+        if (slen > 32)
         {
-          t64 = "(uint64_t)";
+          t64 = "(u64)";
+        }
+        else if(strcmp(t64.c_str(),"")==0)
+        {
+          t64 = "(u32)";
         }
 
-        snprintf(workbuff, WBUFF_LEN, "(%s(_d[%d] & (%s)) << %dU)", t64.c_str(), bn, msk[8].c_str(), slen);
+        snprintf(workbuff, WBUFF_LEN, "(((%s(can_msg_bytes[%d])) & (%s%s)) << %dU)", t64.c_str(), bn, t64.c_str(),msk[8].c_str(), slen);
         tosigexpr += workbuff;
 
-        snprintf(workbuff, WBUFF_LEN, "((_m->%s >> %dU) & (%s))", sig->Name.c_str(), slen, msk[8].c_str());
+        snprintf(workbuff, WBUFF_LEN, "(((%s(data_struct->%s)) >> %dU) & (%s%s))",t64.c_str(),sig->Name.c_str(), slen,t64.c_str(), msk[8].c_str());
         AppendToByteLine(to_bytes[bn], workbuff);
       }
     }
 
     if (slen > 0)
     {
+      if(strcmp(t64.c_str(),"(u64)")!=0)
+      {
+          t64 = "(u32)";
+      }
       bn = ShiftByte(sig, bn);
 
-      snprintf(workbuff, WBUFF_LEN, " | ((_d[%d] >> %dU) & (%s))", bn, 8 - slen, msk[slen].c_str());
+      snprintf(workbuff, WBUFF_LEN, "\n\t\t\t| (((%s(can_msg_bytes[%d])) >> %dU) & (%s%s))", t64.c_str(),bn, 8 - slen, msk[slen].c_str(),t64.c_str());
       tosigexpr += workbuff;
 
-      snprintf(workbuff, WBUFF_LEN, "((_m->%s & (%s)) << %dU)", sig->Name.c_str(), msk[slen].c_str(),
+      snprintf(workbuff, WBUFF_LEN, "(((%s(data_struct->%s)) & (%s%s)) << %dU)", t64.c_str(),sig->Name.c_str(),t64.c_str(), msk[slen].c_str(),
         8 - slen);
       AppendToByteLine(to_bytes[bn], workbuff);
     }
@@ -307,7 +330,7 @@ void CSigPrinter::AppendToByteLine(std::string& expr, std::string str)
   if (expr.size() > 0)
   {
     // Not first appendingF
-    expr += " | " + str;
+    expr += "\n\t\t\t| " + str;
   }
   else
   {

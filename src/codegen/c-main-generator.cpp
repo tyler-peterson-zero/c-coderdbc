@@ -23,9 +23,9 @@ const char* extend_func_body =
   "// can be correctly handled. You need to select type which can contain\n"
   "// n+1 bits where n is the largest signed signal width. For example if\n"
   "// the most wide signed signal has a width of 31 bits you need to set\n"
-  "// bitext_t as int32_t and ubitext_t as uint32_t\n"
+  "// bitext_t as i32 and ubitext_t as u32\n"
   "// Defined these typedefs in @dbccodeconf.h or locally in 'dbcdrvname'-config.h\n"
-  "static bitext_t %s(ubitext_t val, uint8_t bits)\n"
+  "static bitext_t %s(ubitext_t val, u8 bits)\n"
   "{\n"
   "  ubitext_t const m = (ubitext_t) (1u << (bits - 1u));\n"
   "  return ((val ^ m) - m);\n"
@@ -89,7 +89,7 @@ void CiMainGenerator::Gen_MainHeader()
   fwriter.Append();
   fwriter.Append("#ifdef __cplusplus\nextern \"C\" {\n#endif");
   fwriter.Append();
-  fwriter.Append("#include <stdint.h>");
+  fwriter.Append("#include <zero_types.h>");
   fwriter.Append();
 
   fwriter.Append("// DBC file version");
@@ -305,17 +305,17 @@ void CiMainGenerator::Gen_MainHeader()
       continue;
     }
 
-    fwriter.Append("uint32_t Unpack_%s_%s(%s_t* _m, const uint8_t* _d, uint8_t dlc_);",
+    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, u8* can_msg_bytes, u8 dlc );",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     fwriter.Append("#ifdef %s", fdesc->gen.usesruct_def.c_str());
 
-    fwriter.Append("uint32_t Pack_%s_%s(%s_t* _m, __CoderDbcCanFrame_t__* cframe);",
+    fwriter.Append("u32 Pack_%s_%s( const %s_t* data_struct, __CoderDbcCanFrame_t__* cframe );",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     fwriter.Append("#else");
 
-    fwriter.Append("uint32_t Pack_%s_%s(%s_t* _m, uint8_t* _d, uint8_t* _len, uint8_t* _ide);",
+    fwriter.Append("zero_return_type Pack_%s_%s( const %s_t* data_struct,u8* can_msg_bytes, u8 num_msg_bytes);",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     fwriter.Append("#endif // %s", fdesc->gen.usesruct_def.c_str());
@@ -334,6 +334,7 @@ void CiMainGenerator::Gen_MainSource()
   fwriter.AppendText(fdesc->gen.start_common_info);
   fwriter.AppendText(fdesc->gen.start_driver_info);
   // include main header file
+  fwriter.Append("#include \"zero_types.h\"");
   fwriter.Append("#include \"%s\"", fdesc->file.core_h.fname.c_str());
   fwriter.Append(2);
 
@@ -364,7 +365,7 @@ void CiMainGenerator::Gen_MainSource()
   fwriter.Append("// before this line - in dbccodeconf.h");
   fwriter.Append("");
   fwriter.Append("#ifndef GetSystemTick");
-  fwriter.Append("#define GetSystemTick() (0u)");
+  fwriter.Append("#define GetSystemTick() ((u64)0)");
   fwriter.Append("#endif");
   fwriter.Append("");
   fwriter.Append("// This macro guard is for the case when you want to build");
@@ -393,13 +394,13 @@ void CiMainGenerator::Gen_MainSource()
     }
 
     // first function
-    fwriter.Append("uint32_t Unpack_%s_%s(%s_t* _m, const uint8_t* _d, uint8_t dlc_)\n{",
+    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, u8* can_msg_bytes, u8 dlc )\n{",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     // put dirt trick to avoid warning about unusing parameter
     // (dlc) when monitora are disabled. trick is better than
     // selection different signatures because of external API consistency
-    fwriter.Append("  (void)dlc_;");
+    fwriter.Append("  (void)dlc;");
 
     WriteUnpackBody(sigprt.sigs_expr[num]);
 
@@ -411,7 +412,7 @@ void CiMainGenerator::Gen_MainSource()
     fwriter.Append();
 
     // second function
-    fwriter.Append("uint32_t Pack_%s_%s(%s_t* _m, __CoderDbcCanFrame_t__* cframe)",
+    fwriter.Append("u32 Pack_%s_%s( const %s_t* data_struct_ptr, __CoderDbcCanFrame_t__* cframe )",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     WritePackStructBody(sigprt.sigs_expr[num]);
@@ -420,7 +421,7 @@ void CiMainGenerator::Gen_MainSource()
     fwriter.Append();
 
     // third function
-    fwriter.Append("uint32_t Pack_%s_%s(%s_t* _m, uint8_t* _d, uint8_t* _len, uint8_t* _ide)",
+    fwriter.Append("zero_return_type Pack_%s_%s( const %s_t* data_struct, u8* can_msg_bytes,u8 num_msg_bytes)",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     WritePackArrayBody(sigprt.sigs_expr[num]);
@@ -462,7 +463,7 @@ void CiMainGenerator::Gen_CanMonUtil()
   fwriter.AppendText(fdesc->gen.start_common_info);
   fwriter.Append("#pragma once");
   fwriter.Append("");
-  fwriter.Append("#include <stdint.h>");
+  fwriter.Append("#include <zero_types.h>");
   fwriter.Append("");
   fwriter.Append("#ifdef __cplusplus");
   fwriter.Append("extern \"C\" {");
@@ -482,30 +483,30 @@ void CiMainGenerator::Gen_CanMonUtil()
   fwriter.Append("typedef struct");
   fwriter.Append("{");
   fwriter.Append("  // @last_cycle keeps tick-value when last frame was received");
-  fwriter.Append("  uint32_t last_cycle;");
+  fwriter.Append("  u64 last_cycle;");
   fwriter.Append("");
   fwriter.Append("  // @timeout_cycle keeps maximum timeout for frame, user responsibility");
   fwriter.Append("  // to init this field and use it in missing frame monitoring function");
-  fwriter.Append("  uint32_t timeout_cycle;");
+  fwriter.Append("  u32 timeout_cycle;");
   fwriter.Append("");
   fwriter.Append("  // @frame_cnt keeps count of all the received frames");
-  fwriter.Append("  uint32_t frame_cnt;");
+  fwriter.Append("  u32 frame_cnt;");
   fwriter.Append("");
   fwriter.Append("  // setting up @roll_error bit indicates roll counting fail.");
   fwriter.Append("  // Bit is not clearing automatically!");
-  fwriter.Append("  uint32_t roll_error : 1;");
+  fwriter.Append("  bool roll_error : 1;");
   fwriter.Append("");
   fwriter.Append("  // setting up @checksum_error bit indicates checksum checking failure.");
   fwriter.Append("  // Bit is not clearing automatically!");
-  fwriter.Append("  uint32_t csm_error : 1;");
+  fwriter.Append("  bool csm_error : 1;");
   fwriter.Append("");
   fwriter.Append("  // setting up @cycle_error bit indicates that time was overrunned.");
   fwriter.Append("  // Bit is not clearing automatically!");
-  fwriter.Append("  uint32_t cycle_error : 1;");
+  fwriter.Append("  bool cycle_error : 1;");
   fwriter.Append("");
   fwriter.Append("  // setting up @dlc_error bit indicates that the actual length of");
   fwriter.Append("  // CAN frame is less then defined by CAN matrix!");
-  fwriter.Append("  uint32_t dlc_error : 1;");
+  fwriter.Append("  u32 dlc_error : 1;");
   fwriter.Append("");
   fwriter.Append("} FrameMonitor_t;");
   fwriter.Append("");
@@ -522,7 +523,7 @@ void CiMainGenerator::Gen_DbcCodeConf()
   fwriter.AppendText(fdesc->gen.start_common_info);
   fwriter.Append("#pragma once");
   fwriter.Append("");
-  fwriter.Append("#include <stdint.h>");
+  fwriter.Append("#include <zero_types.h>");
   fwriter.Append("");
   fwriter.Append("// when USE_SIGFLOAT enabed the sigfloat_t must be defined");
   fwriter.Append("// typedef double sigfloat_t;");
@@ -537,14 +538,14 @@ void CiMainGenerator::Gen_DbcCodeConf()
 
   fwriter.Append("// defualt @__ext_sig__ help types definition");
   fwriter.Append("");
-  fwriter.Append("typedef uint32_t ubitext_t;");
-  fwriter.Append("typedef int32_t bitext_t;");
+  fwriter.Append("typedef u32 ubitext_t;");
+  fwriter.Append("typedef i32 bitext_t;");
   fwriter.Append("");
   fwriter.Append("// To provide a way to make missing control correctly you");
   fwriter.Append("// have to define macro @GetSystemTick() which has to");
   fwriter.Append("// return kind of tick counter (e.g. 1 ms ticker)");
   fwriter.Append("");
-  fwriter.Append("// #define GetSystemTick() __get__tick__()");
+  fwriter.Append("#define GetSystemTick() ZeroGetMilliseconds()");
   fwriter.Append("");
   fwriter.Append("// To provide a way to calculate hash (crc) for CAN");
   fwriter.Append("// frame's data field you have to define macro @GetFrameHash");
@@ -687,13 +688,13 @@ void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
 
     if (sgs->msg.Signals[num].Signed)
     {
-      fwriter.Append("  _m->%s = (%s) %s(( %s ), %d);",
+      fwriter.Append("  data_struct->%s = (%s) %s(( %s ), %d);",
         sname, PrintType((int)sgs->msg.Signals[num].TypeRo).c_str(),
         ext_sig_func_name, expr.c_str(), (int32_t)sgs->msg.Signals[num].LengthBit);
     }
     else
     {
-      fwriter.Append("  _m->%s = (%s) ( %s );", sname,
+      fwriter.Append("  data_struct->%s = (%s) ( %s );", sname,
         PrintType((int)sgs->msg.Signals[num].TypeRo).c_str(), expr.c_str());
     }
 
@@ -705,12 +706,12 @@ void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
       if (sgs->msg.Signals[num].IsDoubleSig)
       {
         // for double signals (sigfloat_t) type cast
-        fwriter.Append("  _m->%s = (sigfloat_t)(%s_%s_fromS(_m->%s));",
+        fwriter.Append("  data_struct->%s = (sigfloat_t)(%s_%s_fromS(data_struct->%s));",
           sgs->msg.Signals[num].NameFloat.c_str(), fdesc->gen.DRVNAME.c_str(), sname, sname);
       }
       else
       {
-        fwriter.Append("  _m->%s = (%s) %s_%s_fromS(_m->%s);",
+        fwriter.Append("  data_struct->%s = (%s) %s_%s_fromS(data_struct->%s);",
           sgs->msg.Signals[num].NameFloat.c_str(),
           PrintType((int)sgs->msg.Signals[num].TypePhys).c_str(),
           fdesc->gen.DRVNAME.c_str(), sname, sname);
@@ -728,18 +729,18 @@ void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
   }
 
   fwriter.Append("#ifdef %s", fdesc->gen.usemon_def.c_str());
-  fwriter.Append("  _m->mon1.dlc_error = (dlc_ < %s_DLC);", sgs->msg.Name.c_str());
-  fwriter.Append("  _m->mon1.last_cycle = GetSystemTick();");
-  fwriter.Append("  _m->mon1.frame_cnt++;");
+  fwriter.Append("  data_struct->mon1.dlc_error = (dlc < %s_DLC);", sgs->msg.Name.c_str());
+  fwriter.Append("  data_struct->mon1.last_cycle = GetSystemTick();");
+  fwriter.Append("  data_struct->mon1.frame_cnt++;");
   fwriter.Append();
 
   if (sgs->msg.RollSig != nullptr)
   {
     // Put rolling monitor here
     fwriter.Append("#ifdef %s", fdesc->gen.useroll_def.c_str());
-    fwriter.Append("  _m->mon1.roll_error = (_m->%s != _m->%s_expt);",
+    fwriter.Append("  data_struct->mon1.roll_error = (data_struct->%s != data_struct->%s_expt);",
       sgs->msg.RollSig->Name.c_str(), sgs->msg.RollSig->Name.c_str());
-    fwriter.Append("  _m->%s_expt = (_m->%s + 1) & (0x%02XU);", sgs->msg.RollSig->Name.c_str(),
+    fwriter.Append("  data_struct->%s_expt = (data_struct->%s + 1) & (0x%02XU);", sgs->msg.RollSig->Name.c_str(),
       sgs->msg.RollSig->Name.c_str(), (1 << sgs->msg.RollSig->LengthBit) - 1);
     // Put rolling monitor here
     fwriter.Append("#endif // %s", fdesc->gen.useroll_def.c_str());
@@ -750,7 +751,7 @@ void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
   {
     // Put checksum check function call here
     fwriter.Append("#ifdef %s", fdesc->gen.usecsm_def.c_str());
-    fwriter.Append("  _m->mon1.csm_error = (((uint8_t)GetFrameHash(_d, %s_DLC, %s_CANID, %s, %d)) != (_m->%s));",
+    fwriter.Append("  data_struct->mon1.csm_error = (((u8)GetFrameHash(can_msg_bytes, %s_DLC, %s_CANID, %s, %d)) != (data_struct->%s));",
       sgs->msg.Name.c_str(), sgs->msg.Name.c_str(), sgs->msg.CsmMethod.c_str(),
       sgs->msg.CsmOp, sgs->msg.CsmSig->Name.c_str());
     fwriter.Append("#endif // %s", fdesc->gen.usecsm_def.c_str());
@@ -759,7 +760,7 @@ void CiMainGenerator::WriteUnpackBody(const CiExpr_t* sgs)
 
   auto Fmon_func = "FMon_" + sgs->msg.Name + "_" + fdesc->gen.drvname;
 
-  fwriter.Append("  %s(&_m->mon1, %s_CANID);", Fmon_func.c_str(), sgs->msg.Name.c_str());
+  fwriter.Append("  %s(&data_struct->mon1, %s_CANID);", Fmon_func.c_str(), sgs->msg.Name.c_str());
 
   fwriter.Append("#endif // %s", fdesc->gen.usemon_def.c_str());
   fwriter.Append();
@@ -771,9 +772,9 @@ void CiMainGenerator::WritePackStructBody(const CiExpr_t* sgs)
 {
   fwriter.Append("{");
   PrintPackCommonText("cframe->Data", sgs);
-  fwriter.Append("  cframe->MsgId = (uint32_t) %s_CANID;", sgs->msg.Name.c_str());
-  fwriter.Append("  cframe->DLC = (uint8_t) %s_DLC;", sgs->msg.Name.c_str());
-  fwriter.Append("  cframe->IDE = (uint8_t) %s_IDE;", sgs->msg.Name.c_str());
+  fwriter.Append("  cframe->MsgId = (u32) %s_CANID;", sgs->msg.Name.c_str());
+  fwriter.Append("  cframe->DLC = (u8) %s_DLC;", sgs->msg.Name.c_str());
+  fwriter.Append("  cframe->IDE = (u8) %s_IDE;", sgs->msg.Name.c_str());
   fwriter.Append("  return %s_CANID;", sgs->msg.Name.c_str());
   fwriter.Append("}");
   fwriter.Append();
@@ -782,10 +783,16 @@ void CiMainGenerator::WritePackStructBody(const CiExpr_t* sgs)
 void CiMainGenerator::WritePackArrayBody(const CiExpr_t* sgs)
 {
   fwriter.Append("{");
-  PrintPackCommonText("_d", sgs);
-  fwriter.Append("  *_len = (uint8_t) %s_DLC;", sgs->msg.Name.c_str());
-  fwriter.Append("  *_ide = (uint8_t) %s_IDE;", sgs->msg.Name.c_str());
-  fwriter.Append("  return %s_CANID;", sgs->msg.Name.c_str());
+  fwriter.Append("  zero_return_type zero_ret = ZERO_RET_SUCCESS;", sgs->msg.Name.c_str());
+  fwriter.Append("  if(num_msg_bytes == (u8) %s_DLC)", sgs->msg.Name.c_str());
+  fwriter.Append("  {");  
+  PrintPackCommonText("can_msg_bytes", sgs);
+  fwriter.Append("  }");
+  fwriter.Append("  else");
+  fwriter.Append("  {");
+  fwriter.Append("    zero_ret = ZERO_RET_FAIL;");
+  fwriter.Append("  }");
+  fwriter.Append("  return zero_ret;", sgs->msg.Name.c_str());
   fwriter.Append("}");
   fwriter.Append();
 }
@@ -795,16 +802,21 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
   // this function will print body of packing function
 
   // pring array content clearin loop
-  fwriter.Append("  uint8_t i; for (i = 0u; i < %s(%s_DLC); %s[i++] = %s);",
+
+  fwriter.Append("#ifdef INIT_DATA_BYTES");
+  fwriter.Append("    u8 i;");
+
+  fwriter.Append("    for (i = 0u; i < %s(%s_DLC); i++)\n    {\n      %s[i] = %s;\n    }",
     prt_dlcValidateMacroName.c_str(),
     sgs->msg.Name.c_str(), arrtxt.c_str(),
     prt_initialDataByteValueName.c_str());
-  fwriter.Append();
+  fwriter.Append("#endif //INIT_DATA_BYTES");
 
+    
   if (sgs->msg.RollSig != nullptr)
   {
     fwriter.Append("#ifdef %s", fdesc->gen.useroll_def.c_str());
-    fwriter.Append("  _m->%s = (_m->%s + 1) & (0x%02XU);", sgs->msg.RollSig->Name.c_str(),
+    fwriter.Append("  data_struct->%s = (data_struct->%s + 1) & (0x%02XU);", sgs->msg.RollSig->Name.c_str(),
       sgs->msg.RollSig->Name.c_str(), (1 << sgs->msg.RollSig->LengthBit) - 1);
     fwriter.Append("#endif // %s", fdesc->gen.useroll_def.c_str());
     fwriter.Append();
@@ -814,7 +826,7 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
   {
     // code for clearing checksum
     fwriter.Append("#ifdef %s", fdesc->gen.usecsm_def.c_str());
-    fwriter.Append("  _m->%s = (%s) 0;", sgs->msg.CsmSig->Name.c_str(), PrintType((int)sgs->msg.CsmSig->TypeRo).c_str());
+    fwriter.Append("  data_struct->%s = (%s) 0;", sgs->msg.CsmSig->Name.c_str(), PrintType((int)sgs->msg.CsmSig->TypeRo).c_str());
     fwriter.Append("#endif // %s", fdesc->gen.usecsm_def.c_str());
     fwriter.Append();
   }
@@ -830,7 +842,7 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
       if (sgs->msg.Signals[n].IsSimpleSig == false)
       {
         // print toS from *_phys to original named sigint (integer duplicate of signal)
-        fwriter.Append("  _m->%s = (%s) %s_%s_toS(_m->%s);",
+        fwriter.Append("  data_struct->%s = (%s) %s_%s_toS(data_struct->%s);",
           sgs->msg.Signals[n].Name.c_str(),
           PrintType((int) sgs->msg.Signals[n].TypeRo).c_str(),
           fdesc->gen.DRVNAME.c_str(),
@@ -849,7 +861,7 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
       continue;
     }
 
-    fwriter.Append("  %s[%d] |= (uint8_t) ( %s );", arrtxt.c_str(), i, sgs->to_bytes[i].c_str());
+    fwriter.Append("    %s[%d] |= (u8) ( %s );", arrtxt.c_str(), i, sgs->to_bytes[i].c_str());
   }
 
   fwriter.Append("");
@@ -859,11 +871,11 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
     // code for getting checksum value and putting it in array
     fwriter.Append("#ifdef %s", fdesc->gen.usecsm_def.c_str());
 
-    fwriter.Append("  _m->%s = ((uint8_t)GetFrameHash(%s, %s_DLC, %s_CANID, %s, %d));",
+    fwriter.Append("  data_struct->%s = ((u8)GetFrameHash(%s, %s_DLC, %s_CANID, %s, %d));",
       sgs->msg.CsmSig->Name.c_str(), arrtxt.c_str(), sgs->msg.Name.c_str(),
       sgs->msg.Name.c_str(), sgs->msg.CsmMethod.c_str(), sgs->msg.CsmOp);
 
-    fwriter.Append("  %s[%d] |= (uint8_t) ( %s );", arrtxt.c_str(), sgs->msg.CsmByteNum, sgs->msg.CsmToByteExpr.c_str());
+    fwriter.Append("  %s[%d] |= (u8) ( %s );", arrtxt.c_str(), sgs->msg.CsmByteNum, sgs->msg.CsmToByteExpr.c_str());
 
     fwriter.Append("#endif // %s", fdesc->gen.usecsm_def.c_str());
     fwriter.Append();

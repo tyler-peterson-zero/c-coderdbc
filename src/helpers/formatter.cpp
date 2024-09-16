@@ -10,14 +10,14 @@ static char work_buff[kMaxWorkArrLength] = { 0 };
 
 static const std::string __typeprint[8] =
 {
-  "int8_t",
-  "int16_t",
-  "int32_t",
-  "int64_t",
-  "uint8_t",
-  "uint16_t",
-  "uint32_t",
-  "uint64_t"
+  "i8",
+  "i16",
+  "i32",
+  "i64",
+  "u8",
+  "u16",
+  "u32",
+  "u64"
 };
 
 std::string IndentedString(size_t n, const std::string& source, const char c)
