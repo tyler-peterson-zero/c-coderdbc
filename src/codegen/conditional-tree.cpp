@@ -12,39 +12,85 @@ std::string ConditionalTree::WriteCode(const ConditionalTree_t* tree, std::strin
   if (tree != nullptr)
   {
     std::string temp;
-
+    bool misra_close = false;
     if (tree->Type == ConditionalType::Cond)
     {
-      temp = StrPrint("if (%s) {", tree->ConditionExpresion.c_str());
+      temp = StrPrint("if (%s)",tree->ConditionExpresion.c_str());
+      PrintCode(temp, intend);
+      temp = StrPrint("{");
       PrintCode(temp, intend);
 
-      WriteCode(tree->High, outstr, intend + 1);
+      WriteCode(tree->High, outstr, intend + 2);
 
       if (tree->Low != nullptr)
       {
         if (tree->Low->Type == ConditionalType::Express)
         {
-          temp = StrPrint("} else if (%s) {", tree->Low->ConditionExpresion.c_str());
+          temp = StrPrint("}");
           PrintCode(temp, intend);
+          temp = StrPrint("else if (%s)", tree->Low->ConditionExpresion.c_str());
+          PrintCode(temp, intend);
+          temp = StrPrint("{");
+          PrintCode(temp, intend);
+          misra_close = true;
         }
         else
         {
-          temp = "} else {";
+          temp =StrPrint("}"); 
           PrintCode(temp, intend);
+          temp =StrPrint("else");
+          PrintCode(temp, intend);
+          temp =StrPrint("{"); 
+          PrintCode(temp, intend);
+          
         }
 
-        WriteCode(tree->Low, outstr, intend + 1);
+        WriteCode(tree->Low, outstr, intend + 2);
       }
-      else
+      else 
       {
-        temp = "}";
-        PrintCode(temp, intend);
+        if(misra_close==true)
+        {
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+          temp =StrPrint("else");
+          PrintCode(temp, intend);
+          temp =StrPrint("{"); 
+          PrintCode(temp, intend);
+          temp =StrPrint("  //MISRA-C");
+          PrintCode(temp, intend);
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+          misra_close=false;
+        }
+        else
+        {
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+        }
       }
 
       if (tree->Low != nullptr)
       {
-        temp = "}";
-        PrintCode(temp, intend);
+        if(misra_close==true)
+        {
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+          temp =StrPrint("else");
+          PrintCode(temp, intend);
+          temp =StrPrint("{"); 
+          PrintCode(temp, intend);
+          temp =StrPrint("  //MISRA-C");
+          PrintCode(temp, intend);
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+          misra_close=false;
+        }
+        else
+        {
+          temp =StrPrint("}"); 
+          PrintCode(temp, intend);
+        }
       }
     }
     else

@@ -313,7 +313,7 @@ std::string CSigPrinter::PrintSignalExpr(const SignalDescriptor_t* sig, std::vec
       }
       bn = ShiftByte(sig, bn);
 
-      snprintf(workbuff, WBUFF_LEN, "\n\t\t\t| (((%s(can_msg_bytes[%d])) >> %dU) & (%s%s))", t64.c_str(),bn, 8 - slen, msk[slen].c_str(),t64.c_str());
+      snprintf(workbuff, WBUFF_LEN, "\n\t\t\t| (((%s(can_msg_bytes[%d])) >> %dU) & (%s%s))", t64.c_str(),bn, 8 - slen, t64.c_str(), msk[slen].c_str());
       tosigexpr += workbuff;
 
       snprintf(workbuff, WBUFF_LEN, "(((%s(data_struct->%s)) & (%s%s)) << %dU)", t64.c_str(),sig->Name.c_str(),t64.c_str(), msk[slen].c_str(),

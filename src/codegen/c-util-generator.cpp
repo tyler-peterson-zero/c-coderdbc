@@ -2,6 +2,7 @@
 #include "helpers/formatter.h"
 #include <algorithm>
 #include <regex>
+#include <string>
 
 static const std::string openguard = "#ifdef __cplusplus\n\
 extern \"C\" {\n\
@@ -115,6 +116,12 @@ void CiUtilGenerator::PrintHeader()
 
   tof.Append();
 
+  std::string tmpDrv = gdesc->DrvName_orig.c_str();
+  tmpDrv = str_toupper(tmpDrv);
+  tof.Append("#ifdef DASH_SUPPORT"); 
+  tof.Append("#if EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  tof.Append();
+  
   // include c-main driver header
   tof.Append("#include \"%s.h\"", file_drvname.c_str());
   tof.Append();
@@ -169,7 +176,9 @@ void CiUtilGenerator::PrintHeader()
   // print extern for super structs
   if (rx.size() > 0 || tx.size() > 0)
   {
-    tof.Append("#ifdef __DEF_%s__", gdesc->DRVNAME.c_str());
+    std::string tmp = gdesc->DrvName_orig.c_str();
+    tmp = str_toupper(tmp);
+    tof.Append("#ifdef __DEF_%s__", tmp.c_str());
     tof.Append();
 
     if (rx.size() > 0)
@@ -184,11 +193,14 @@ void CiUtilGenerator::PrintHeader()
       tof.Append();
     }
 
-    tof.Append("#endif // __DEF_%s__", gdesc->DRVNAME.c_str());
+    tof.Append("#endif // __DEF_%s__", tmp.c_str());
     tof.Append();
   }
 
   tof.Append(closeguard);
+
+  tof.Append("#endif //EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  tof.Append("#endif //DASH_SUPPORT");
 
   tof.Flush(fdesc->util_h.fpath);
 }
@@ -200,7 +212,13 @@ void CiUtilGenerator::PrintSource()
 
   tof.Append("#include \"%s\"", fdesc->util_h.fname.c_str());
   tof.Append();
-
+  
+  std::string tmpDrv = gdesc->DrvName_orig.c_str();
+  tmpDrv = str_toupper(tmpDrv);
+  tof.Append("#ifdef DASH_SUPPORT"); 
+  tof.Append("#if EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  tof.Append();
+  
   tof.Append("// DBC file version");
   tof.Append("#if (%s != (%uU)) || (%s != (%uU))",
     gdesc->verhigh_def.c_str(), p_dlist->ver.hi, gdesc->verlow_def.c_str(), p_dlist->ver.low);
@@ -213,7 +231,9 @@ void CiUtilGenerator::PrintSource()
   // optional RX and TX struct allocations
   if (rx.size() > 0 || tx.size() > 0)
   {
-    tof.Append("#ifdef __DEF_%s__", gdesc->DRVNAME.c_str());
+    std::string tmp = gdesc->DrvName_orig.c_str();
+    tmp = str_toupper(tmp);
+    tof.Append("#ifdef __DEF_%s__", tmp.c_str());
     tof.Append();
 
     if (rx.size() > 0)
@@ -228,7 +248,7 @@ void CiUtilGenerator::PrintSource()
       tof.Append();
     }
 
-    tof.Append("#endif // __DEF_%s__", gdesc->DRVNAME.c_str());
+    tof.Append("#endif // __DEF_%s__", tmp.c_str());
     tof.Append();
   }
 
@@ -240,24 +260,27 @@ void CiUtilGenerator::PrintSource()
     // binary search on FrameID for selecting unpacking function
     auto tree = FillTreeLevel(rx, 0, static_cast<int32_t>(rx.size()));
 
-    tof.Append("u32 %s_Receive(%s_rx_t* rx_data_struct, const u8* rx_data_bytes, u32 _id, u8 dlc_)",
+    tof.Append("u32 %s_Receive(%s_rx_t* all_rx_data_struct, const u8* rx_data_bytes, u32 msgid, u8 dlc)",
       gdesc->drvname.c_str(), gdesc->drvname.c_str());
 
     tof.Append("{");
-    tof.Append(" u32 recid = 0;");
+    tof.Append("  u32 recid = 0;");
 
     // put tree-view struct on code (in treestr variable)
     std::string treestr;
     condtree.Clear();
-    tof.Append(condtree.WriteCode(tree, treestr, 1));
+    tof.Append(condtree.WriteCode(tree, treestr, 2));
     tof.Append();
-    tof.Append(" return recid;");
+    tof.Append("  return recid;");
     tof.Append("}");
     tof.Append();
 
     // clear tree after using
     condtree.DeleteTree(tree);
   }
+
+  tof.Append("#endif //EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  tof.Append("#endif //DASH_SUPPORT");
 
   tof.Flush(fdesc->util_c.fpath);
 }
@@ -283,10 +306,10 @@ ConditionalTree_t* CiUtilGenerator::FillTreeLevel(std::vector<MessageDescriptor_
   {
     ret->Type = ConditionalType::Cond;
     auto msg = list[l];
-    ret->ConditionExpresion = StrPrint("_id == 0x%XU", msg->MsgID);
+    ret->ConditionExpresion = StrPrint("msgid == 0x%XU", msg->MsgID);
     ret->High = new ConditionalTree_t;
     ret->High->Type = ConditionalType::Single;
-    ret->High->UtilCodeBody = StrPrint("recid = Unpack_%s_%s(&(all_rx_data_struct->%s), rx_data_bytes, dlc_);",
+    ret->High->UtilCodeBody = StrPrint("recid = Unpack_%s_%s(&(all_rx_data_struct->%s), rx_data_bytes, dlc);",
       msg->Name.c_str(), code_drvname.c_str(), msg->Name.c_str());
     return ret;
   }
@@ -297,11 +320,11 @@ ConditionalTree_t* CiUtilGenerator::FillTreeLevel(std::vector<MessageDescriptor_
 
     if (lowhalf > 1)
     {
-      ret->ConditionExpresion = StrPrint("(_id >= 0x%XU) && (_id < 0x%XU)", list[l]->MsgID, list[(l + lowhalf)]->MsgID);
+      ret->ConditionExpresion = StrPrint("(msgid >= 0x%XU) && (msgid < 0x%XU)", list[l]->MsgID, list[(l + lowhalf)]->MsgID);
     }
     else
     {
-      ret->ConditionExpresion = StrPrint("_id == 0x%XU", list[l]->MsgID);
+      ret->ConditionExpresion = StrPrint("msgid == 0x%XU", list[l]->MsgID);
     }
 
     ret->High = FillTreeLevel(list, l, l + lowhalf, true);
@@ -311,8 +334,8 @@ ConditionalTree_t* CiUtilGenerator::FillTreeLevel(std::vector<MessageDescriptor_
   {
     ret->Type = ConditionalType::Express;
     auto msg = list[l];
-    ret->ConditionExpresion = StrPrint("_id == 0x%XU", msg->MsgID);
-    ret->UtilCodeBody = StrPrint("recid = Unpack_%s_%s(&(all_rx_data_struct->%s), rx_data_bytes, dlc_);",
+    ret->ConditionExpresion = StrPrint("msgid == 0x%XU", msg->MsgID);
+    ret->UtilCodeBody = StrPrint("recid = Unpack_%s_%s(&(all_rx_data_struct->%s), rx_data_bytes, dlc);",
       msg->Name.c_str(), code_drvname.c_str(), msg->Name.c_str());
   }
 

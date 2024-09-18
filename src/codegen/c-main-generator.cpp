@@ -1,3 +1,4 @@
+#include <string>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <iostream>
@@ -91,7 +92,11 @@ void CiMainGenerator::Gen_MainHeader()
   fwriter.Append();
   fwriter.Append("#include <zero_types.h>");
   fwriter.Append();
-
+  std::string tmpDrv = fdesc->gen.DrvName_orig.c_str();
+  tmpDrv = str_toupper(tmpDrv);
+  fwriter.Append("#ifdef DASH_SUPPORT"); 
+  fwriter.Append("#if EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  fwriter.Append();
   fwriter.Append("// DBC file version");
   fwriter.Append("#define %s (%uU)", fdesc->gen.verhigh_def.c_str(), fdesc->gen.hiver);
   fwriter.Append("#define %s (%uU)", fdesc->gen.verlow_def.c_str(), fdesc->gen.lowver);
@@ -305,7 +310,7 @@ void CiMainGenerator::Gen_MainHeader()
       continue;
     }
 
-    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, u8* can_msg_bytes, u8 dlc );",
+    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, const u8* can_msg_bytes, u8 dlc );",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     fwriter.Append("#ifdef %s", fdesc->gen.usesruct_def.c_str());
@@ -321,7 +326,9 @@ void CiMainGenerator::Gen_MainHeader()
     fwriter.Append("#endif // %s", fdesc->gen.usesruct_def.c_str());
     fwriter.Append();
   }
-
+  fwriter.Append("#endif //EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  fwriter.Append("#endif //DASH_SUPPORT"); 
+  fwriter.Append();
   fwriter.Append("#ifdef __cplusplus\n}\n#endif");
 
   // save fwrite cached text to file
@@ -337,6 +344,11 @@ void CiMainGenerator::Gen_MainSource()
   fwriter.Append("#include \"zero_types.h\"");
   fwriter.Append("#include \"%s\"", fdesc->file.core_h.fname.c_str());
   fwriter.Append(2);
+  std::string tmpDrv = fdesc->gen.DrvName_orig.c_str();
+  tmpDrv = str_toupper(tmpDrv);
+  fwriter.Append("#ifdef DASH_SUPPORT"); 
+  fwriter.Append("#if EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+
 
   fwriter.Append("// DBC file version");
   fwriter.Append("#if (%s != (%uU)) || (%s != (%uU))",
@@ -394,7 +406,7 @@ void CiMainGenerator::Gen_MainSource()
     }
 
     // first function
-    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, u8* can_msg_bytes, u8 dlc )\n{",
+    fwriter.Append("u32 Unpack_%s_%s( %s_t* data_struct, const u8* can_msg_bytes, u8 dlc )\n{",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     // put dirt trick to avoid warning about unusing parameter
@@ -412,7 +424,7 @@ void CiMainGenerator::Gen_MainSource()
     fwriter.Append();
 
     // second function
-    fwriter.Append("u32 Pack_%s_%s( const %s_t* data_struct_ptr, __CoderDbcCanFrame_t__* cframe )",
+    fwriter.Append("u32 Pack_%s_%s( const %s_t* data_struct, __CoderDbcCanFrame_t__* cframe )",
       m.Name.c_str(), fdesc->gen.DrvName_orig.c_str(), m.Name.c_str());
 
     WritePackStructBody(sigprt.sigs_expr[num]);
@@ -429,6 +441,8 @@ void CiMainGenerator::Gen_MainSource()
     fwriter.Append("#endif // %s", fdesc->gen.usesruct_def.c_str());
     fwriter.Append();
   }
+  fwriter.Append("#endif //EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  fwriter.Append("#endif //DASH_SUPPORT"); 
 
   fwriter.Flush(fdesc->file.core_c.fpath);
 }
@@ -525,6 +539,13 @@ void CiMainGenerator::Gen_DbcCodeConf()
   fwriter.Append("");
   fwriter.Append("#include <zero_types.h>");
   fwriter.Append("");
+  
+  std::string tmpDrv = fdesc->gen.DrvName_orig.c_str();
+  tmpDrv = str_toupper(tmpDrv);
+  fwriter.Append("#ifdef DASH_SUPPORT"); 
+  fwriter.Append("#if EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  fwriter.Append("");
+
   fwriter.Append("// when USE_SIGFLOAT enabed the sigfloat_t must be defined");
   fwriter.Append("// typedef double sigfloat_t;");
   fwriter.Append("");
@@ -533,7 +554,7 @@ void CiMainGenerator::Gen_DbcCodeConf()
   fwriter.Append("// typedef {can_struct} __CoderDbcCanFrame_t__;");
   fwriter.Append("");
   fwriter.Append("// if you need to allocate rx and tx messages structs put the allocation macro here");
-  fwriter.Append("// #define __DEF_{your_driver_name}__");
+  fwriter.Append("#define __DEF_%s__",fdesc->gen.DRVNAME.c_str());
   fwriter.Append("");
 
   fwriter.Append("// defualt @__ext_sig__ help types definition");
@@ -551,6 +572,9 @@ void CiMainGenerator::Gen_DbcCodeConf()
   fwriter.Append("// frame's data field you have to define macro @GetFrameHash");
   fwriter.Append("");
   fwriter.Append("// #define GetFrameHash(a,b,c,d,e) __get_hash__(a,b,c,d,e)");
+  fwriter.Append("");
+  fwriter.Append("#endif //EQ(DASH_SUPPORT,%s)",tmpDrv.c_str());
+  fwriter.Append("#endif //DASH_SUPPORT"); 
   fwriter.Append("");
 
   fwriter.Flush(fdesc->file.confdir + '/' + "dbccodeconf.h");
@@ -579,11 +603,25 @@ void CiMainGenerator::WriteSigStructField(const SignalDescriptor_t& sig, bool bi
 
   std::string dtype = "";
 
-  dtype += "  " + PrintType((int)sig.TypeRo) + " " + sig.Name;
-
   if (bits && (sig.LengthBit < 8))
   {
+    std::string tmp = "";
+    tmp += PrintType((int)sig.TypeRo); 
+    if(tmp[0]=='i')
+    {
+      tmp = "i32";
+    }
+    else
+    {
+      tmp = "u32";
+    }
+    dtype += "  " + tmp + " " + sig.Name;
+
     dtype += StrPrint(" : %d", sig.LengthBit);
+  }
+  else
+  {
+    dtype += "  " + PrintType((int)sig.TypeRo) + " " + sig.Name;
   }
 
   dtype += ";";
@@ -806,8 +844,7 @@ void CiMainGenerator::PrintPackCommonText(const std::string& arrtxt, const CiExp
   fwriter.Append("#ifdef INIT_DATA_BYTES");
   fwriter.Append("    u8 i;");
 
-  fwriter.Append("    for (i = 0u; i < %s(%s_DLC); i++)\n    {\n      %s[i] = %s;\n    }",
-    prt_dlcValidateMacroName.c_str(),
+  fwriter.Append("    for (i = 0u; i < %s_DLC; i++)\n    {\n      %s[i] = %s;\n    }",
     sgs->msg.Name.c_str(), arrtxt.c_str(),
     prt_initialDataByteValueName.c_str());
   fwriter.Append("#endif //INIT_DATA_BYTES");
